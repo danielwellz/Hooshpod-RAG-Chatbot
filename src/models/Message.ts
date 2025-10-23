@@ -1,11 +1,11 @@
-﻿import { Document, Schema, model } from "mongoose";
-
-export type MessageRole = "user" | "assistant" | "system";
+import { Document, Schema, model } from "mongoose";
 
 export interface MessageDocument extends Document {
-  conversationId: string;
-  role: MessageRole;
-  content: string;
+  userId: string;
+  sessionId: string;
+  message: string;
+  response: string;
+  cached: boolean;
   meta?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
@@ -13,13 +13,11 @@ export interface MessageDocument extends Document {
 
 const messageSchema = new Schema<MessageDocument>(
   {
-    conversationId: { type: String, required: true, index: true },
-    role: {
-      type: String,
-      enum: ["user", "assistant", "system"],
-      required: true,
-    },
-    content: { type: String, required: true },
+    userId: { type: String, required: true, index: true },
+    sessionId: { type: String, required: true, index: true },
+    message: { type: String, required: true },
+    response: { type: String, required: true },
+    cached: { type: Boolean, default: false },
     meta: { type: Schema.Types.Mixed, default: {} },
   },
   {
@@ -27,5 +25,8 @@ const messageSchema = new Schema<MessageDocument>(
     versionKey: false,
   }
 );
+
+messageSchema.index({ userId: 1, createdAt: 1 });
+messageSchema.index({ sessionId: 1, createdAt: 1 });
 
 export const Message = model<MessageDocument>("Message", messageSchema);

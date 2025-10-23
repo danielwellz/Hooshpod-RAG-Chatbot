@@ -1,28 +1,38 @@
-﻿import Redis from "ioredis";
-import { env, isProduction } from "../config/env";
+﻿import { Redis } from "ioredis";
+import type { RedisOptions } from "ioredis";
+import { env, isProduction } from "../config/env.js";
+import { logger } from "../lib/logger.js";
 
-let client: Redis | null = null;
+type RedisClient = InstanceType<typeof Redis>;
 
-const createClient = (): Redis => {
-  const redis = new Redis(env.REDIS_URL, {
+let client: RedisClient | null = null;
+
+const createClient = (): RedisClient => {
+  const options: RedisOptions = {
     lazyConnect: true,
     maxRetriesPerRequest: null,
     showFriendlyErrorStack: !isProduction,
     tls: env.REDIS_URL.startsWith("rediss://") ? {} : undefined,
-  });
+  };
+
+  const redis = new Redis(env.REDIS_URL, options);
 
   redis.on("connect", () => {
-    console.info("Redis connected");
+    logger.info("redis.connected");
   });
 
-  redis.on("error", (error) => {
-    console.error("Redis error", error);
+  redis.on("error", (error: unknown) => {
+    logger.error("redis.error", { error: error instanceof Error ? error.message : error });
+  });
+
+  redis.on("close", () => {
+    logger.warn("redis.connection_closed");
   });
 
   return redis;
 };
 
-export const getRedisClient = (): Redis => {
+export const getRedisClient = (): RedisClient => {
   if (!client) {
     client = createClient();
   }
@@ -45,4 +55,5 @@ export const disconnectRedis = async (): Promise<void> => {
 
   await client.quit();
   client = null;
+  logger.info("redis.disconnected");
 };

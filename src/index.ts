@@ -1,9 +1,10 @@
 ﻿import http from "node:http";
-import app from "./app";
-import { env } from "./config/env";
-import { connectMongo, disconnectMongo } from "./db/mongo";
-import { connectRedis, disconnectRedis } from "./db/redis";
-import { initializeRAG } from "./services/chat.service";
+import app from "./app.js";
+import { env } from "./config/env.js";
+import { connectMongo, disconnectMongo } from "./db/mongo.js";
+import { connectRedis, disconnectRedis } from "./db/redis.js";
+import { logger } from "./lib/logger.js";
+import { initializeRAG } from "./services/chat.service.js";
 
 const bootstrap = async (): Promise<void> => {
   try {
@@ -14,27 +15,49 @@ const bootstrap = async (): Promise<void> => {
     const server = http.createServer(app);
 
     server.listen(env.PORT, () => {
-      console.info(`Server listening on port ${env.PORT}`);
+      logger.info("server.listening", { port: env.PORT });
     });
 
-    const shutdown = async () => {
-      console.info("Shutting down gracefully");
+    const shutdown = async (signal: NodeJS.Signals | string, exitCode = 0) => {
+      logger.info("server.shutdown_initiated", { signal, exitCode });
 
-      server.close(() => {
-        console.info("HTTP server closed");
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          logger.info("server.http_closed");
+          resolve();
+        });
       });
 
       await Promise.all([disconnectMongo(), disconnectRedis()]);
-
-      process.exit(0);
+      process.exit(exitCode);
     };
 
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
+    process.once("SIGINT", (signal) => {
+      void shutdown(signal, 0);
+    });
+    process.once("SIGTERM", (signal) => {
+      void shutdown(signal, 0);
+    });
+    process.once("uncaughtException", (error) => {
+      logger.error("server.uncaught_exception", { message: error.message });
+      shutdown("uncaughtException", 1).catch((shutdownError) => {
+        logger.error("server.shutdown_failed", { error: shutdownError });
+        process.exit(1);
+      });
+    });
+    process.once("unhandledRejection", (reason) => {
+      logger.error("server.unhandled_rejection", { reason });
+      shutdown("unhandledRejection", 1).catch((shutdownError) => {
+        logger.error("server.shutdown_failed", { error: shutdownError });
+        process.exit(1);
+      });
+    });
   } catch (error) {
-    console.error("Failed to bootstrap application", error);
+    logger.error("server.bootstrap_failed", { error: error instanceof Error ? error.message : error });
     process.exit(1);
   }
 };
 
 bootstrap();
+
+

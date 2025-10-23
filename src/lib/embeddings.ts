@@ -1,9 +1,18 @@
-﻿import { env } from "../config/env";
+﻿import { env } from "../config/env.js";
 
-let xenovaPipelinePromise: Promise<any> | null = null;
-let cohereClientPromise: Promise<any> | null = null;
+type XenovaPipeline = (text: string, options?: Record<string, unknown>) => Promise<unknown>;
 
-const loadXenovaPipeline = async () => {
+interface CohereLikeClient {
+  embed: (input: { texts: string[]; model: string }) => Promise<{
+    embeddings?: unknown;
+    data?: unknown;
+  }>;
+}
+
+let xenovaPipelinePromise: Promise<XenovaPipeline> | null = null;
+let cohereClientPromise: Promise<CohereLikeClient> | null = null;
+
+const loadXenovaPipeline = async (): Promise<XenovaPipeline> => {
   if (!xenovaPipelinePromise) {
     xenovaPipelinePromise = (async () => {
       const { pipeline } = await import("@xenova/transformers");
@@ -14,7 +23,7 @@ const loadXenovaPipeline = async () => {
   return xenovaPipelinePromise;
 };
 
-const loadCohereClient = async () => {
+const loadCohereClient = async (): Promise<CohereLikeClient> => {
   if (!env.COHERE_API_KEY) {
     throw new Error("COHERE_API_KEY is required when EMBEDDING_PROVIDER=cohere");
   }
@@ -95,7 +104,13 @@ export const getEmbeddings = async (inputs: string[]): Promise<number[][]> => {
 
     const embeddings = response.embeddings ?? response.data ?? [];
 
-    return embeddings.map((item: { values?: number[] }) => normalize(toArray(item?.values ?? item)));
+    return (embeddings as unknown[]).map((item) => {
+      const vector =
+        typeof item === "object" && item !== null
+          ? (item as { values?: number[] }).values ?? item
+          : item;
+      return normalize(toArray(vector));
+    });
   }
 
   throw new Error(`Unsupported EMBEDDING_PROVIDER: ${env.EMBEDDING_PROVIDER}`);
